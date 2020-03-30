@@ -39,6 +39,8 @@ void line(Vec2i x0, Vec2i x1, TGAImage &img, const TGAColor color)
     }
 }
 
+//第一种方法画三角形，用bounding box来找到三角形的范围，遍历box中的点，通过重心坐标的方法来确定在不在pts形成三角形内
+//如果存在于三角形内部，那么就对这个点着色，否则，这个点不着色。
 void triangle(Vec3f *pts, float *zbuffer, TGAImage &image, Vec2i uv[3])
 {
     Vec2f bboxmin(std::numeric_limits<float>::max(), std::numeric_limits<float>::max());
@@ -58,16 +60,19 @@ void triangle(Vec3f *pts, float *zbuffer, TGAImage &image, Vec2i uv[3])
         for (P.y = bboxmin.y; P.y <= bboxmax.y; P.y++)
         {
             Vec3f bc_screen = barycentric(pts[0], pts[1], pts[2], P);
+            //如果有一个值<0就说明这个点不在pts三角形内
             if (bc_screen.x < 0 || bc_screen.y < 0 || bc_screen.z < 0)
                 continue;
             P.z = 0;
             Vec2i uvP(0, 0);
             for (int i = 0; i < 3; i++)
             {
-                P.z += pts[i][2] * bc_screen[i];
+                P.z += pts[i][2] * bc_screen[i]; //通过重心坐标计算此点z坐标的值，更新zbuffer
+                //去得到这个点的纹素
                 uvP.x += uv[i][0] * bc_screen[i];
                 uvP.y += uv[i][1] * bc_screen[i];
             }
+            //如果z大，说明这个z在视线前面，应该去着色
             if (zbuffer[int(P.x + P.y * width)] < P.z)
             {
                 zbuffer[int(P.x + P.y * width)] = P.z;
@@ -80,79 +85,56 @@ void triangle(Vec3f *pts, float *zbuffer, TGAImage &image, Vec2i uv[3])
 
 
 
-/*
-//the rigth function
-void triangle(Vec3f *pts, float *zbuffer, TGAImage &image, Vec2i *uv)
-{
-    Vec2f bboxmin(std::numeric_limits<float>::max(), std::numeric_limits<float>::max());
-    Vec2f bboxmax(-std::numeric_limits<float>::max(), -std::numeric_limits<float>::max());
-    Vec2f clamp(image.get_width() - 1, image.get_height() - 1);
-    for (int i = 0; i < 3; i++)
-    {
-        for (int j = 0; j < 2; j++)
-        {
-            bboxmin[j] = std::max(0.f, std::min(bboxmin[j], pts[i][j]));
-            bboxmax[j] = std::min(clamp[j], std::max(bboxmax[j], pts[i][j]));
-        }
-    }
-    Vec3f P;
-    for (P.x = bboxmin.x; P.x <= bboxmax.x; P.x++)
-    {
-        for (P.y = bboxmin.y; P.y <= bboxmax.y; P.y++)
-        {
-            Vec3f bc_screen = barycentric(pts[0], pts[1], pts[2], P);
-            if (bc_screen.x < 0 || bc_screen.y < 0 || bc_screen.z < 0)
-                continue;
-            P.z = 0;
-            for (int i = 0; i < 3; i++)
-                P.z += pts[i][2] * bc_screen[i];
-            if (zbuffer[int(P.x + P.y * width)] < P.z)
-            {
-                zbuffer[int(P.x + P.y * width)] = P.z;
-                image.set(P.x, P.y, color);
-            }
-        }
-    }
-}
-*/
 
-
-void triangle(Vec3f t0, Vec3f t1, Vec3f t2,float *zbuffer, TGAImage &image, TGAColor color)
+//第二种画三角形的方法
+void triangle(Vec3f t0, Vec3f t1, Vec3f t2,float *zbuffer, TGAImage &image, Vec2i *uv)
 {
     //让三角形的三个顶点有序排列
     // 
-    //    -------*-------
-    //    ----*----------
-    //    ----------*----
+    //    -------*-------t2
+    //    ----*----------t1
+    //    ----------*----t0
     //    上面三个点就是三个三角形，要以y的大小排列三个三角形的顺序，当我们知道三角形的三个顶点时，
     //    我们的边界就可以知道了，所以通过排序来得到三条直线的斜率，知道要计算着色哪一款地方
-    // */
+    // 
 
+    //下面使得三点按t0.y<t1.y<t2.y的顺序排列
     if (t0.y > t1.y)
         std::swap(t0, t1);
     if (t0.y > t2.y)
         std::swap(t0, t2);
     if (t1.y > t2.y)
         std::swap(t1, t2);
+    
     int total_height = t2.y - t0.y;
+    //这里只是画了三角形的下半区域
     for (int y = t0.y; y <= t1.y; y++)
     {
-        int segment_height = t1.y - t0.y + 1;
+        int segment_height = t1.y - t0.y + 1; //这里加一是为了防止除以0
         float alpha = (float)(y - t0.y) / total_height;
         float beta = (float)(y - t0.y) / segment_height; // be careful with divisions by zero
+        //一个点t的坐标为：基点t0+向量，向量长度为|t-t0|,方向为t-t0
         Vec3f A = t0 + (t2 - t0) * alpha;
         Vec3f B = t0 + (t1 - t0) * beta;
+        //因为需要从x小值到大值，所以需要知道那个小，哪个大
         if (A.x > B.x)
             std::swap(A, B);
         for (int j = A.x; j <= B.x; j++)
         {
             Vec3f P(j,y,0);
+            //计算这个单纯是为了去算P.z和uvP坐标，因为上面保证了这个P点一定是在三角形内部的
             Vec3f bc_screen = barycentric(t0, t1,t2, P);
             // if (bc_screen.x < 0 || bc_screen.y < 0 || bc_screen.z < 0)
             //     continue;
             P.z = 0;
             P.z = t0.z * bc_screen[0] + t1.z * bc_screen[1] + t2.z * bc_screen[2];
-
+            Vec2i uvP(0, 0);
+            for (int i = 0; i < 3;i++)
+            {
+                uvP[0] += uv[i][0] * bc_screen[i];
+                uvP[1] += uv[i][1] * bc_screen[i];
+            }
+            TGAColor color = model->diffuse(uvP);
             if (zbuffer[int(P.x + P.y * width)] < P.z)
             {
                 zbuffer[int(P.x + P.y * width)] = P.z;
@@ -163,6 +145,8 @@ void triangle(Vec3f t0, Vec3f t1, Vec3f t2,float *zbuffer, TGAImage &image, TGAC
         // image.set(A.x, y, red);
         // image.set(B.x, y, green);
     }
+
+    //这个是画三角形的上半部分区域
     for (int y = t2.y; y >= t1.y; y--)
     {
         int segment_height = t2.y - t1.y + 1;
@@ -180,6 +164,13 @@ void triangle(Vec3f t0, Vec3f t1, Vec3f t2,float *zbuffer, TGAImage &image, TGAC
             //     continue;
             P.z = 0;
             P.z = t0.z * bc_screen[0]+t1.z*bc_screen[1]+t2.z*bc_screen[2];
+            Vec2i uvP(0, 0);
+            for (int i = 0; i < 3; i++)
+            {
+                uvP[0] += uv[i][0] * bc_screen[i];
+                uvP[1] += uv[i][1] * bc_screen[i];
+            }
+            TGAColor color = model->diffuse(uvP);
             if (zbuffer[int(P.x + P.y * width)] < P.z)
             {
                 zbuffer[int(P.x + P.y * width)] = P.z;
@@ -188,6 +179,7 @@ void triangle(Vec3f t0, Vec3f t1, Vec3f t2,float *zbuffer, TGAImage &image, TGAC
             image.set(j, y, color); // attention, due to int casts t0.y+i != A.y
         }
     }
+    //这两个循环是可以写成一个的，但是为了程序的可读性，就先放在这里了。
     // line(t0, t1, image, green);
     // line(t1, t2, image, green);
     // line(t0, t2, image, red);
@@ -195,6 +187,7 @@ void triangle(Vec3f t0, Vec3f t1, Vec3f t2,float *zbuffer, TGAImage &image, TGAC
 
 Vec3f barycentric(Vec3f A,Vec3f B,Vec3f C,Vec3f P)
 {
+    //这里的计算公式详见https://zhuanlan.zhihu.com/p/111540355
     Vec3f s[2];
     for (int i = 2; i--;)
     {
@@ -327,7 +320,8 @@ int main(int argc,char **argv)
             {
                 uv[k] = model->uv(i, k);
             }
-            triangle(pts,zbuffer,img,uv);
+            // triangle(pts,zbuffer,img,uv);
+            triangle(pts[0], pts[1], pts[2],zbuffer,img, uv);
         }
         // Vec2i uv[3];
         // for (int k = 0; k < 3;k++)
