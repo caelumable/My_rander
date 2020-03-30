@@ -310,8 +310,11 @@ int main(int argc,char **argv)
         for (int j = 0; j < 3;j++)
         {
             Vec3f v = model->vert(face[j]);
-            pts[j] = world2screen(v);
-            // pts[j] = Vec3f((v.x+1.) * width/2., (v.y+1.) * height/2.,v.z);
+            // pts[j] = world2screen(v);
+            //一定要注意数据中的类型应该是什么样子的，比如，pts是三维坐标系中的点，所有的值都是float，
+            //但是换算到屏幕时，pts的x,y坐标应该是整数，因为pts的x，y坐标是img图上的坐标，
+            //这个坐标只有整数，所以应该为int类型，但是z坐标是用来计算zbuffer的，需要精确，不需要换成int型
+            pts[j] = Vec3f(int((v.x+1.) * width/2.+.5), int((v.y+1.) * height/2.+.5),v.z);
             world_coords[j] = v;
         }
         Vec3f n = (world_coords[2] - world_coords[0]) ^ (world_coords[1] - world_coords[0]);
