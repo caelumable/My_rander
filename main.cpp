@@ -41,6 +41,12 @@ void line(Vec2i x0, Vec2i x1, TGAImage &img, const TGAColor color)
 
 //第一种方法画三角形，用bounding box来找到三角形的范围，遍历box中的点，通过重心坐标的方法来确定在不在pts形成三角形内
 //如果存在于三角形内部，那么就对这个点着色，否则，这个点不着色。
+/*
+注意，这里的pts应该是2i,因为它是画在布上面，只有xy两个坐标，
+这里写成Vec3f是因为需要计算重心坐标，而重心坐标是3个浮点数，类型只能为Vec3f
+所以为了类型的匹配，三个点的坐标也应该转换为这个类型，不然就不能计算了
+下面的第二种方法也一样
+*/
 void triangle(Vec3f *pts, float *zbuffer, TGAImage &image, Vec2i uv[3])
 {
     Vec2f bboxmin(std::numeric_limits<float>::max(), std::numeric_limits<float>::max());
@@ -201,82 +207,6 @@ Vec3f barycentric(Vec3f A,Vec3f B,Vec3f C,Vec3f P)
     return Vec3f(-1, 1, 1);
 }
 
-/*
-注意，这里的pts应该是2i,因为它是画在布上面，只有xy两个坐标，
-这里写成Vec3f是因为需要计算重心坐标，而重心坐标是3个浮点数，类型只能为Vec3f
-所以为了类型的匹配，三个点的坐标也应该转换为这个类型，不然就不能计算了
-*/
-/*
-void triangle(Vec3f pts[3], TGAImage &img, const TGAColor color, float *zbuffer)
-{
-    //让三角形的三个顶点有序排列
-    
-    //    -------*-------
-    //    ----*----------
-    //    ----------*----
-    //    上面三个点就是三个三角形，要以y的大小排列三个三角形的顺序，当我们知道三角形的三个顶点时，
-    //    我们的边界就可以知道了，所以通过排序来得到三条直线的斜率，知道要计算着色哪一款地方
-    
-    if(pts[0].y > pts[1].y) std::swap(pts[0], pts[1]);
-    if(pts[0].y > pts[2].y) std::swap(pts[0], pts[2]);
-    if(pts[1].y > pts[2].y) std::swap(pts[1], pts[2]);
-
-    int total_height = pts[2].y - pts[0].y;
-    // int half_height = pts[1].y - pts[1].y;
-    // float dt_01 = float(pts[1].x - pts[0].x) / (pts[1].y - pts[0].y);
-    // float dt_02 = float(pts[2].x - pts[0].x) / (pts[2].y - pts[0].y);
-    // float dt_12 = float(pts[2].x - pts[1].x) / (pts[2].y - pts[1].y);
-
-
-    for (int y = pts[0].y; y<=pts[1].y;y++)
-    {
-        float alpha = float(y - pts[0].y) / total_height;
-        float beta = float(y - pts[0].y) / (pts[1].y - pts[0].y + 1);
-        Vec3f A = pts[0] + (pts[1] - pts[0]) * beta;
-        Vec3f B = pts[0] + (pts[2] - pts[0]) * alpha;
-        if(A.x>B.x)
-            std::swap(A, B);
-        for (int x = A.x; x <= B.x;x++)
-        {
-            Vec3f P(x,y,0);
-            Vec3f bc_screen = barycentric(pts[0], pts[1], pts[2], P);
-            if (bc_screen.x < 0 || bc_screen.y < 0 || bc_screen.z < 0)
-                continue;
-            for (int i = 0; i < 3;i++)
-                P.z += pts[i][2]*bc_screen[i];
-            if(P.z>zbuffer[int(y*width+x)])
-            {
-                zbuffer[int(y * width + x)] = P.z;
-                img.set(x, y, color);
-            }
-        }
-    }
-
-    for (int y = pts[2].y; y >= pts[1].y;y--)
-    {
-        float alpha = (float)(pts[2].y - y) / total_height;
-        float beta = (float)(pts[2].y - y) / (pts[2].y-pts[1].y+1);
-        Vec3f A = pts[2] + (pts[1] - pts[2]) * beta;
-        Vec3f B = pts[2] + (pts[0] - pts[2]) * alpha;
-        if(A.x>B.x)
-            std::swap(A, B);
-        for (int x = A.x; x <= B.x; x++)
-        {
-            Vec3f P(x, y, 0);
-            Vec3f bc_screen = barycentric(pts[0], pts[1], pts[2], P);
-            if (bc_screen.x < 0 || bc_screen.y < 0 || bc_screen.z < 0)
-                continue;
-            for (int i = 0; i < 3; i++)
-                P.z += pts[i][2] * bc_screen[i];
-            if (P.z > zbuffer[y * width + x])
-            {
-                zbuffer[y * width + x] = P.z;
-                img.set(x, y, color);
-            }
-        }
-    }
-}
-*/
 
 Vec3f world2screen(Vec3f v)
 {
@@ -290,8 +220,6 @@ int main(int argc,char **argv)
     //这里为什么需要new一个zbuffer？局部变量的作用域到底在哪里，为什么float zbuffer[width * height];不行
     float *zbuffer=new float[width * height];
     std::fill(zbuffer, zbuffer + width * height, -std::numeric_limits<float>::max());
-    // for (int i = 0; i<width*height; i++)
-    //     zbuffer[i]=-std::numeric_limits<float>::max();
 
     Vec3f light_dir(0, 0, -1);
 
@@ -312,6 +240,7 @@ int main(int argc,char **argv)
         }
         Vec3f n = (world_coords[2] - world_coords[0]) ^ (world_coords[1] - world_coords[0]);
         n.normalize();
+        //注意这两个类型要一样，都是Vec3f,不能因为light_dir中全是int就写成Vec3i，这样就不能和n相乘了,因为不是一个类型，不能相乘。
         float intensity = n * light_dir;
         if(intensity>0)
         {
@@ -323,16 +252,6 @@ int main(int argc,char **argv)
             // triangle(pts,zbuffer,img,uv);
             triangle(pts[0], pts[1], pts[2],zbuffer,img, uv);
         }
-        // Vec2i uv[3];
-        // for (int k = 0; k < 3;k++)
-        // {
-        //     uv[k] = model->uv(i, k);
-        // }
-        // triangle(pts, zbuffer, img,uv);
-        //注意这两个类型要一样，都是Vec3f,不能因为light_dir中全是int就写成Vec3i，这样就不能和n相乘了,因为不是一个类型，不能相乘。
-        // float intensity = n * light_dir;
-        // triangle(pts, zbuffer, img, TGAColor(rand() % 255, rand() % 255, rand() % 255, 255) );
-        // triangle(pts[0], pts[1], pts[2],zbuffer,img, red);
     }
 
 
