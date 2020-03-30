@@ -39,7 +39,7 @@ void line(Vec2i x0, Vec2i x1, TGAImage &img, const TGAColor color)
     }
 }
 
-void triangle(Vec3f *pts, float *zbuffer, Vec2i uv[3],TGAImage &image)
+void triangle(Vec3f *pts, float *zbuffer, TGAImage &image, Vec2i uv[3])
 {
     Vec2f bboxmin(std::numeric_limits<float>::max(), std::numeric_limits<float>::max());
     Vec2f bboxmax(-std::numeric_limits<float>::max(), -std::numeric_limits<float>::max());
@@ -71,23 +71,62 @@ void triangle(Vec3f *pts, float *zbuffer, Vec2i uv[3],TGAImage &image)
             if (zbuffer[int(P.x + P.y * width)] < P.z)
             {
                 zbuffer[int(P.x + P.y * width)] = P.z;
-                // TGAColor color = model->diffuse(uvP);
-                image.set(P.x, P.y, TGAColor(255,255,255,255));
+                TGAColor color = model->diffuse(uvP);
+                image.set(P.x, P.y, color);
             }
         }
     }
 }
 
+
+
+/*
+//the rigth function
+void triangle(Vec3f *pts, float *zbuffer, TGAImage &image, Vec2i *uv)
+{
+    Vec2f bboxmin(std::numeric_limits<float>::max(), std::numeric_limits<float>::max());
+    Vec2f bboxmax(-std::numeric_limits<float>::max(), -std::numeric_limits<float>::max());
+    Vec2f clamp(image.get_width() - 1, image.get_height() - 1);
+    for (int i = 0; i < 3; i++)
+    {
+        for (int j = 0; j < 2; j++)
+        {
+            bboxmin[j] = std::max(0.f, std::min(bboxmin[j], pts[i][j]));
+            bboxmax[j] = std::min(clamp[j], std::max(bboxmax[j], pts[i][j]));
+        }
+    }
+    Vec3f P;
+    for (P.x = bboxmin.x; P.x <= bboxmax.x; P.x++)
+    {
+        for (P.y = bboxmin.y; P.y <= bboxmax.y; P.y++)
+        {
+            Vec3f bc_screen = barycentric(pts[0], pts[1], pts[2], P);
+            if (bc_screen.x < 0 || bc_screen.y < 0 || bc_screen.z < 0)
+                continue;
+            P.z = 0;
+            for (int i = 0; i < 3; i++)
+                P.z += pts[i][2] * bc_screen[i];
+            if (zbuffer[int(P.x + P.y * width)] < P.z)
+            {
+                zbuffer[int(P.x + P.y * width)] = P.z;
+                image.set(P.x, P.y, color);
+            }
+        }
+    }
+}
+*/
+
+
 void triangle(Vec3f t0, Vec3f t1, Vec3f t2,float *zbuffer, TGAImage &image, TGAColor color)
 {
     //让三角形的三个顶点有序排列
-    /*
-       -------*-------
-       ----*----------
-       ----------*----
-       上面三个点就是三个三角形，要以y的大小排列三个三角形的顺序，当我们知道三角形的三个顶点时，
-       我们的边界就可以知道了，所以通过排序来得到三条直线的斜率，知道要计算着色哪一款地方
-    */
+    // 
+    //    -------*-------
+    //    ----*----------
+    //    ----------*----
+    //    上面三个点就是三个三角形，要以y的大小排列三个三角形的顺序，当我们知道三角形的三个顶点时，
+    //    我们的边界就可以知道了，所以通过排序来得到三条直线的斜率，知道要计算着色哪一款地方
+    // */
 
     if (t0.y > t1.y)
         std::swap(t0, t1);
@@ -246,6 +285,10 @@ void triangle(Vec3f pts[3], TGAImage &img, const TGAColor color, float *zbuffer)
 }
 */
 
+Vec3f world2screen(Vec3f v)
+{
+    return Vec3f(int((v.x + 1.) * width / 2. + .5), int((v.y + 1.) * height / 2. + .5), v.z);
+}
 
 int main(int argc,char **argv)
 {
@@ -267,7 +310,8 @@ int main(int argc,char **argv)
         for (int j = 0; j < 3;j++)
         {
             Vec3f v = model->vert(face[j]);
-            pts[j] = Vec3f((v.x+1) * width/2., (v.y+1) * height/2.,v.z);
+            pts[j] = world2screen(v);
+            // pts[j] = Vec3f((v.x+1.) * width/2., (v.y+1.) * height/2.,v.z);
             world_coords[j] = v;
         }
         Vec3f n = (world_coords[2] - world_coords[0]) ^ (world_coords[1] - world_coords[0]);
@@ -280,14 +324,21 @@ int main(int argc,char **argv)
             {
                 uv[k] = model->uv(i, k);
             }
-            triangle(pts,zbuffer,uv,img);
+            triangle(pts,zbuffer,img,uv);
         }
-        
+        // Vec2i uv[3];
+        // for (int k = 0; k < 3;k++)
+        // {
+        //     uv[k] = model->uv(i, k);
+        // }
+        // triangle(pts, zbuffer, img,uv);
         //注意这两个类型要一样，都是Vec3f,不能因为light_dir中全是int就写成Vec3i，这样就不能和n相乘了,因为不是一个类型，不能相乘。
         // float intensity = n * light_dir;
         // triangle(pts, zbuffer, img, TGAColor(rand() % 255, rand() % 255, rand() % 255, 255) );
         // triangle(pts[0], pts[1], pts[2],zbuffer,img, red);
     }
+
+
     img.flip_vertically();
     img.write_tga_file("out.tga");
     delete model;
