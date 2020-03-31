@@ -8,7 +8,8 @@ const int width=800;
 const int height=800;
 
 Model *model;
-
+Vec3f light_dir(0, 0, -1);
+Vec3f camera(0, 0, 3);
 const TGAColor white = TGAColor(255, 255, 255, 255);
 const TGAColor red = TGAColor(255, 0, 0, 255);
 Vec3f barycentric(Vec3f A, Vec3f B, Vec3f C, Vec3f P);
@@ -221,7 +222,6 @@ int main(int argc,char **argv)
     float *zbuffer=new float[width * height];
     std::fill(zbuffer, zbuffer + width * height, -std::numeric_limits<float>::max());
 
-    Vec3f light_dir(0, 0, -1);
 
     for (int i = 0;i<model->nfaces();i++)
     {
