@@ -1,5 +1,6 @@
 #include <iostream>
 #include <limits>
+#include <cmath>
 #include "tgaimage.h"
 #include "geometry.h"
 #include "model.h"
@@ -8,11 +9,94 @@ const int width=800;
 const int height=800;
 
 Model *model;
+float *zbuffer = new float[width * height];
 Vec3f light_dir(0, 0, -1);
 Vec3f camera(0, 0, 3);
+
 const TGAColor white = TGAColor(255, 255, 255, 255);
 const TGAColor red = TGAColor(255, 0, 0, 255);
+constexpr double MY_PI = 3.1415926;
+
 Vec3f barycentric(Vec3f A, Vec3f B, Vec3f C, Vec3f P);
+
+
+//首先获得这个模型是怎么旋转的，旋转角度是多少
+Matrix get_model_matrix(float rotation_angle)
+{
+    Matrix model = Matrix::identity(4);
+    float radian = (rotation_angle / 360.0) * 2 * MY_PI;
+    Matrix rota;
+    rota << cos(radian), -sin(radian), 0, 0,
+        sin(radian), cos(radian), 0, 0,
+        0, 0, 1, 0,
+        0, 0, 0, 1;
+    model = rota * model;
+    return model;
+}
+
+//绕任意轴进行旋转，vec是轴的向量
+Matrix get_model_randomrotate_matrix(float rotation_angle, Vec3f vec)
+{
+    Matrix model = Matrix::identity(4);
+    vec.normalize();
+    
+    float radian = (rotation_angle / 360.0) * 2 * MY_PI;
+    float nx = vec[0];
+    float ny = vec[1];
+    float nz = vec[2];
+    float tem_store = 1 - cos(radian);
+    // Eigen::Matrix3f rota;
+    Matrix rota(3,3);
+    // Eigen::Matrix3f k, I = Eigen::Matrix3f::Identity();
+    Matrix k(3,3), I(3,3) = Matrix::identity(3);
+    k << 0, nz, ny,
+        nz, 0, -nx,
+        ny, nx, 0;
+    rota = cos(radian) * I + (1 - cos(radian)) * (k * k.transpose()) + sin(radian) * k;
+    Matrix rotate(4,4);
+    rotate << rota(0, 0), rota(0, 1), rota(0, 2), 0,
+        rota(1, 0), rota(1, 1), rota(1, 2), 0,
+        rota(2, 0), rota(2, 1), rota(2, 2), 0,
+        0, 0, 0, 1;
+    model = rotate * model;
+    return model;
+}
+
+//把眼睛移到坐标原点位置，方便计算
+Matrix get_view_matrix(Vec3f eye_pos)
+{
+    Matrix view = Matrix::identity(4);
+    Matrix translate;
+    translate << 1, 0, 0, -eye_pos[0],
+                 0, 1, 0, -eye_pos[1],
+                 0, 0, 1,-eye_pos[2],
+                 0, 0, 0, 1;
+
+    view = translate * view;
+    return view;
+}
+
+Matrix get_projection_matrix(float eye_fov, float aspect_ratio,
+                                      float zNear, float zFar)
+{
+    Matrix projection = Matrix::identity(4);
+
+    //把视界锥变成orthotical
+    Matrix presp2ortho;
+    presp2ortho << zNear, 0, 0, 0,
+                   0, zNear, 0, 0,
+                   0, 0, zNear + zFar, -zNear * zFar,
+                   0, 0, 1, 0;
+    float w = tan(((eye_fov / 360.0) * 2.0 * MY_PI) / 2) * zNear * 2.0;
+    float h = w * aspect_ratio;
+    Matrix scale;
+    scale << 2.0 / w, 0, 0, 0,
+        0, 2.0 / h, 0, 0,
+        0, 0, 2.0 / (zNear - zFar), 0,
+        0, 0, 0, 1;
+    projection = scale * presp2ortho;
+    return projection;
+}
 
 void line(Vec2i x0, Vec2i x1, TGAImage &img, const TGAColor color)
 {
@@ -219,7 +303,7 @@ int main(int argc,char **argv)
     model = new Model("obj/african_head.obj");
     TGAImage img(width,height,TGAImage::RGB);
     //这里为什么需要new一个zbuffer？局部变量的作用域到底在哪里，为什么float zbuffer[width * height];不行
-    float *zbuffer=new float[width * height];
+    
     std::fill(zbuffer, zbuffer + width * height, -std::numeric_limits<float>::max());
 
 
